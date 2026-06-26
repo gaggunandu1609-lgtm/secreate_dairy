@@ -102,6 +102,27 @@ export const DiaryProvider = ({ children }) => {
     }
   };
 
+  const updateUserCredentials = async (oldEmail, oldPassword, newEmail, newPassword) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const updatedUser = await authService.updateCredentials(oldEmail, oldPassword, newEmail, newPassword);
+      setCurrentUser(updatedUser);
+      setIsFakeMode(false);
+      
+      localStorage.setItem('diary_session_user', JSON.stringify(updatedUser));
+      localStorage.setItem('diary_session_fake', 'false');
+      
+      await loadEntries(updatedUser.email, false);
+      return updatedUser;
+    } catch (err) {
+      setError(err.message || 'Update failed.');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = () => {
     setCurrentUser(null);
     setIsFakeMode(false);
@@ -249,6 +270,7 @@ export const DiaryProvider = ({ children }) => {
         setIsAudioPlaying,
         login,
         signup,
+        updateUserCredentials,
         logout,
         addEntry,
         updateEntry,

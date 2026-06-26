@@ -183,6 +183,62 @@ export const authService = {
       displayName: newUser.displayName,
       isFakeMode: false
     };
+  },
+
+  updateCredentials: async (oldEmail, oldPassword, newEmail, newPassword) => {
+    await delay(1000);
+    const users = JSON.parse(localStorage.getItem('diary_users') || '{}');
+    const cleanOldEmail = oldEmail.toLowerCase().trim();
+    const cleanNewEmail = newEmail.toLowerCase().trim();
+
+    const user = users[cleanOldEmail];
+    
+    if (!user) {
+      throw new Error('Could not find that diary in our magical realm! ✨');
+    }
+
+    if (oldPassword !== user.password) {
+      throw new Error('The old magical password didn\'t match! 🔐');
+    }
+
+    if (cleanOldEmail !== cleanNewEmail && users[cleanNewEmail]) {
+      throw new Error('The new email is already linked to another diary! 🌸');
+    }
+
+    // Update user info
+    const updatedUser = {
+      ...user,
+      email: cleanNewEmail,
+      password: newPassword
+    };
+
+    // Replace user key if email changed
+    if (cleanOldEmail !== cleanNewEmail) {
+      delete users[cleanOldEmail];
+    }
+    users[cleanNewEmail] = updatedUser;
+    localStorage.setItem('diary_users', JSON.stringify(users));
+
+    // Migrate entries if email changed
+    if (cleanOldEmail !== cleanNewEmail) {
+      const entries = localStorage.getItem(`diary_entries_${cleanOldEmail}`);
+      const decoyEntries = localStorage.getItem(`diary_decoy_entries_${cleanOldEmail}`);
+      
+      if (entries) {
+        localStorage.setItem(`diary_entries_${cleanNewEmail}`, entries);
+        localStorage.removeItem(`diary_entries_${cleanOldEmail}`);
+      }
+      if (decoyEntries) {
+        localStorage.setItem(`diary_decoy_entries_${cleanNewEmail}`, decoyEntries);
+        localStorage.removeItem(`diary_decoy_entries_${cleanOldEmail}`);
+      }
+    }
+
+    return {
+      email: updatedUser.email,
+      displayName: updatedUser.displayName,
+      isFakeMode: false
+    };
   }
 };
 
