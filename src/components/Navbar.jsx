@@ -48,7 +48,8 @@ export default function Navbar() {
   if (!currentUser) return null;
 
   return (
-    <header className={`w-full py-4 px-6 md:px-12 sticky top-0 z-40 transition-all duration-300 backdrop-blur-md border-b ${
+    <>
+      <header className={`w-full py-4 px-6 md:px-12 sticky top-0 z-40 transition-all duration-300 backdrop-blur-md border-b ${
       themeMode === 'pastel'
         ? 'bg-white/60 border-pink-100/60 shadow-sm'
         : 'bg-[#1c1623]/70 border-pink-900/30 shadow-lg shadow-black/10'
