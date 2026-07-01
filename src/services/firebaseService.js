@@ -1,7 +1,18 @@
 import { firebaseConfig, USE_FIREBASE } from '../config/firebaseConfig';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, setDoc, getDoc, collection, query, getDocs, deleteDoc } from 'firebase/firestore';
 
-// A mock service that falls back to LocalStorage, offering an out-of-the-box working experience.
-// It emulates Firebase auth and firestore API methods with simulated network delay.
+// Initialize Firebase conditionally
+let app;
+let db;
+if (USE_FIREBASE) {
+  try {
+    app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+  } catch (err) {
+    console.error("Firebase initialization error:", err);
+  }
+}
 
 const delay = (ms = 600) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -10,7 +21,7 @@ const DEFAULT_USERS = {
     email: 'princess@secret.com',
     password: 'secret',
     displayName: 'Princess Lily 👑',
-    fakePassword: 'fake123' // Fake password mode unlocks decoy entries!
+    fakePassword: 'fake123'
   }
 };
 
@@ -30,54 +41,6 @@ We talked for hours about everything and nothing. I hope this feeling never fade
     sticker: 'ribbon',
     selfDestruct: null,
     imageUrl: null
-  },
-  {
-    id: 'entry-2',
-    title: 'Flying over pastel clouds ☁️',
-    content: `Last night I had the most wonderful dream. I was floating on lavender-colored clouds, and the sky was filled with glowing butterflies and gold stardust. 
-
-I was wearing a dress made of rose petals, and I could fly just by thinking about it! I woke up feeling so warm and inspired. I want to draw the sky exactly how I saw it. ✨`,
-    mood: '✨',
-    moodName: 'Dreamy',
-    category: 'Dreams ✨',
-    date: '2026-05-27',
-    createdAt: new Date('2026-05-27T08:30:00Z').toISOString(),
-    isFavorite: false,
-    sticker: 'star',
-    selfDestruct: null,
-    imageUrl: null
-  },
-  {
-    id: 'entry-3',
-    title: 'Strawberry picnic with Lily and Chloe 🍓',
-    content: `We spent the whole afternoon at the park! We sat under the big oak tree, ate homemade strawberry cupcakes (Chloe made them, they were a bit burnt but sweet!), and listened to soft acoustic music. 
-
-We made daisy chains and laughed until our tummies hurt. These girls make my world so bright. I'm so lucky to have them. 🌸`,
-    mood: '🌸',
-    moodName: 'Happy',
-    category: 'Friends 🌸',
-    date: '2026-05-26',
-    createdAt: new Date('2026-05-26T16:15:00Z').toISOString(),
-    isFavorite: true,
-    sticker: 'flower',
-    selfDestruct: null,
-    imageUrl: null
-  },
-  {
-    id: 'entry-4',
-    title: 'Sometimes it\'s okay to cry 🌧️',
-    content: `Today was a bit of a grey day. I felt overwhelmed with school and felt like crying for no reason. 
-
-But I wrapped myself in my softest blanket, made hot cocoa, and wrote this. My diary is my safe space where I don't have to pretend to be strong. Tomorrow will be a brighter day. 💖`,
-    mood: '🌧️',
-    moodName: 'Sad',
-    category: 'Sad Days 🌧️',
-    date: '2026-05-25',
-    createdAt: new Date('2026-05-25T21:40:00Z').toISOString(),
-    isFavorite: false,
-    sticker: 'cloud',
-    selfDestruct: null,
-    imageUrl: null
   }
 ];
 
@@ -95,25 +58,12 @@ const DEFAULT_DECOY_ENTRIES = [
     sticker: 'star',
     selfDestruct: null,
     imageUrl: null
-  },
-  {
-    id: 'decoy-2',
-    title: 'Cleaned my room 🧹',
-    content: 'Folded my clothes and organized my bookshelf. Put my textbooks in order. Cleaned the window. Looks neat.',
-    mood: '🌸',
-    moodName: 'Peaceful',
-    category: 'Happy Moments 🌈',
-    date: '2026-05-27',
-    createdAt: new Date('2026-05-27T14:00:00Z').toISOString(),
-    isFavorite: false,
-    sticker: 'flower',
-    selfDestruct: null,
-    imageUrl: null
   }
 ];
 
-// Helper to initialize local storage
+// Helper to initialize local storage for offline mode
 const initStorage = () => {
+  if (USE_FIREBASE) return;
   if (!localStorage.getItem('diary_users')) {
     localStorage.setItem('diary_users', JSON.stringify(DEFAULT_USERS));
   }
@@ -130,8 +80,18 @@ initStorage();
 export const authService = {
   login: async (email, password) => {
     await delay(800);
-    const users = JSON.parse(localStorage.getItem('diary_users') || '{}');
-    const user = users[email.toLowerCase().trim()];
+    const cleanEmail = email.toLowerCase().trim();
+    let user;
+
+    if (USE_FIREBASE) {
+      const userDoc = await getDoc(doc(db, "users", cleanEmail));
+      if (userDoc.exists()) {
+        user = userDoc.data();
+      }
+    } else {
+      const users = JSON.parse(localStorage.getItem('diary_users') || '{}');
+      user = users[cleanEmail];
+    }
     
     if (!user) {
       throw new Error('Key not found... Is the spelling correct? 🗝️');
@@ -144,7 +104,6 @@ export const authService = {
         isFakeMode: false
       };
     } else if (password === user.fakePassword) {
-      // Fake password triggers decoy database mode
       return {
         email: user.email,
         displayName: user.displayName + " (Decoy)",
@@ -157,11 +116,18 @@ export const authService = {
 
   signUp: async (email, password, displayName, fakePassword = 'fake123') => {
     await delay(1000);
-    const users = JSON.parse(localStorage.getItem('diary_users') || '{}');
     const cleanEmail = email.toLowerCase().trim();
 
-    if (users[cleanEmail]) {
-      throw new Error('This diary is already registered in our magical realm! ✨');
+    if (USE_FIREBASE) {
+      const userDoc = await getDoc(doc(db, "users", cleanEmail));
+      if (userDoc.exists()) {
+        throw new Error('This diary is already registered in our magical realm! ✨');
+      }
+    } else {
+      const users = JSON.parse(localStorage.getItem('diary_users') || '{}');
+      if (users[cleanEmail]) {
+        throw new Error('This diary is already registered in our magical realm! ✨');
+      }
     }
 
     const newUser = {
@@ -171,12 +137,15 @@ export const authService = {
       fakePassword
     };
 
-    users[cleanEmail] = newUser;
-    localStorage.setItem('diary_users', JSON.stringify(users));
-    
-    // Initialize empty collections
-    localStorage.setItem(`diary_entries_${cleanEmail}`, JSON.stringify([]));
-    localStorage.setItem(`diary_decoy_entries_${cleanEmail}`, JSON.stringify([]));
+    if (USE_FIREBASE) {
+      await setDoc(doc(db, "users", cleanEmail), newUser);
+    } else {
+      const users = JSON.parse(localStorage.getItem('diary_users') || '{}');
+      users[cleanEmail] = newUser;
+      localStorage.setItem('diary_users', JSON.stringify(users));
+      localStorage.setItem(`diary_entries_${cleanEmail}`, JSON.stringify([]));
+      localStorage.setItem(`diary_decoy_entries_${cleanEmail}`, JSON.stringify([]));
+    }
 
     return {
       email: newUser.email,
@@ -187,11 +156,19 @@ export const authService = {
 
   updateCredentials: async (oldEmail, oldPassword, newEmail, newPassword) => {
     await delay(1000);
-    const users = JSON.parse(localStorage.getItem('diary_users') || '{}');
     const cleanOldEmail = oldEmail.toLowerCase().trim();
     const cleanNewEmail = newEmail.toLowerCase().trim();
+    let user;
 
-    const user = users[cleanOldEmail];
+    if (USE_FIREBASE) {
+      const userDoc = await getDoc(doc(db, "users", cleanOldEmail));
+      if (userDoc.exists()) {
+        user = userDoc.data();
+      }
+    } else {
+      const users = JSON.parse(localStorage.getItem('diary_users') || '{}');
+      user = users[cleanOldEmail];
+    }
     
     if (!user) {
       throw new Error('Could not find that diary in our magical realm! ✨');
@@ -201,36 +178,67 @@ export const authService = {
       throw new Error('The old magical password didn\'t match! 🔐');
     }
 
-    if (cleanOldEmail !== cleanNewEmail && users[cleanNewEmail]) {
-      throw new Error('The new email is already linked to another diary! 🌸');
+    if (cleanOldEmail !== cleanNewEmail) {
+      if (USE_FIREBASE) {
+        const newDoc = await getDoc(doc(db, "users", cleanNewEmail));
+        if (newDoc.exists()) {
+          throw new Error('The new email is already linked to another diary! 🌸');
+        }
+      } else {
+        const users = JSON.parse(localStorage.getItem('diary_users') || '{}');
+        if (users[cleanNewEmail]) {
+          throw new Error('The new email is already linked to another diary! 🌸');
+        }
+      }
     }
 
-    // Update user info
     const updatedUser = {
       ...user,
       email: cleanNewEmail,
       password: newPassword
     };
 
-    // Replace user key if email changed
-    if (cleanOldEmail !== cleanNewEmail) {
-      delete users[cleanOldEmail];
-    }
-    users[cleanNewEmail] = updatedUser;
-    localStorage.setItem('diary_users', JSON.stringify(users));
-
-    // Migrate entries if email changed
-    if (cleanOldEmail !== cleanNewEmail) {
-      const entries = localStorage.getItem(`diary_entries_${cleanOldEmail}`);
-      const decoyEntries = localStorage.getItem(`diary_decoy_entries_${cleanOldEmail}`);
+    if (USE_FIREBASE) {
+      // 1. Create new user doc
+      await setDoc(doc(db, "users", cleanNewEmail), updatedUser);
       
-      if (entries) {
-        localStorage.setItem(`diary_entries_${cleanNewEmail}`, entries);
-        localStorage.removeItem(`diary_entries_${cleanOldEmail}`);
+      // 2. Migrate entries if email changed
+      if (cleanOldEmail !== cleanNewEmail) {
+        const entriesSnap = await getDocs(collection(db, `users/${cleanOldEmail}/entries`));
+        for (const docSnap of entriesSnap.docs) {
+          await setDoc(doc(db, `users/${cleanNewEmail}/entries`, docSnap.id), docSnap.data());
+          await deleteDoc(doc(db, `users/${cleanOldEmail}/entries`, docSnap.id));
+        }
+
+        const decoySnap = await getDocs(collection(db, `users/${cleanOldEmail}/decoy_entries`));
+        for (const docSnap of decoySnap.docs) {
+          await setDoc(doc(db, `users/${cleanNewEmail}/decoy_entries`, docSnap.id), docSnap.data());
+          await deleteDoc(doc(db, `users/${cleanOldEmail}/decoy_entries`, docSnap.id));
+        }
+        
+        // 3. Delete old user doc
+        await deleteDoc(doc(db, "users", cleanOldEmail));
       }
-      if (decoyEntries) {
-        localStorage.setItem(`diary_decoy_entries_${cleanNewEmail}`, decoyEntries);
-        localStorage.removeItem(`diary_decoy_entries_${cleanOldEmail}`);
+    } else {
+      const users = JSON.parse(localStorage.getItem('diary_users') || '{}');
+      if (cleanOldEmail !== cleanNewEmail) {
+        delete users[cleanOldEmail];
+      }
+      users[cleanNewEmail] = updatedUser;
+      localStorage.setItem('diary_users', JSON.stringify(users));
+
+      if (cleanOldEmail !== cleanNewEmail) {
+        const entries = localStorage.getItem(`diary_entries_${cleanOldEmail}`);
+        const decoyEntries = localStorage.getItem(`diary_decoy_entries_${cleanOldEmail}`);
+        
+        if (entries) {
+          localStorage.setItem(`diary_entries_${cleanNewEmail}`, entries);
+          localStorage.removeItem(`diary_entries_${cleanOldEmail}`);
+        }
+        if (decoyEntries) {
+          localStorage.setItem(`diary_decoy_entries_${cleanNewEmail}`, decoyEntries);
+          localStorage.removeItem(`diary_decoy_entries_${cleanOldEmail}`);
+        }
       }
     }
 
@@ -245,51 +253,74 @@ export const authService = {
 export const databaseService = {
   getEntries: async (email, isFakeMode = false) => {
     await delay(500);
-    const storageKey = isFakeMode 
-      ? `diary_decoy_entries_${email.toLowerCase().trim()}`
-      : `diary_entries_${email.toLowerCase().trim()}`;
-    return JSON.parse(localStorage.getItem(storageKey) || '[]');
+    const cleanEmail = email.toLowerCase().trim();
+    const colName = isFakeMode ? 'decoy_entries' : 'entries';
+
+    if (USE_FIREBASE) {
+      const snapshot = await getDocs(collection(db, `users/${cleanEmail}/${colName}`));
+      let entries = [];
+      snapshot.forEach(doc => {
+        entries.push(doc.data());
+      });
+      // Sort newest first by createdAt string
+      return entries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    } else {
+      const storageKey = isFakeMode ? `diary_decoy_entries_${cleanEmail}` : `diary_entries_${cleanEmail}`;
+      return JSON.parse(localStorage.getItem(storageKey) || '[]');
+    }
   },
 
   saveEntry: async (email, entry, isFakeMode = false) => {
     await delay(400);
-    const storageKey = isFakeMode 
-      ? `diary_decoy_entries_${email.toLowerCase().trim()}`
-      : `diary_entries_${email.toLowerCase().trim()}`;
-    const entries = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    
+    const cleanEmail = email.toLowerCase().trim();
+    const colName = isFakeMode ? 'decoy_entries' : 'entries';
+
     const newEntry = {
       ...entry,
       id: entry.id || 'entry-' + Math.random().toString(36).substr(2, 9),
       createdAt: entry.createdAt || new Date().toISOString()
     };
 
-    entries.unshift(newEntry); // newest first
-    localStorage.setItem(storageKey, JSON.stringify(entries));
+    if (USE_FIREBASE) {
+      await setDoc(doc(db, `users/${cleanEmail}/${colName}`, newEntry.id), newEntry);
+    } else {
+      const storageKey = isFakeMode ? `diary_decoy_entries_${cleanEmail}` : `diary_entries_${cleanEmail}`;
+      const entries = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      entries.unshift(newEntry);
+      localStorage.setItem(storageKey, JSON.stringify(entries));
+    }
     return newEntry;
   },
 
   updateEntry: async (email, updatedEntry, isFakeMode = false) => {
     await delay(400);
-    const storageKey = isFakeMode 
-      ? `diary_decoy_entries_${email.toLowerCase().trim()}`
-      : `diary_entries_${email.toLowerCase().trim()}`;
-    let entries = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    
-    entries = entries.map(e => e.id === updatedEntry.id ? updatedEntry : e);
-    localStorage.setItem(storageKey, JSON.stringify(entries));
+    const cleanEmail = email.toLowerCase().trim();
+    const colName = isFakeMode ? 'decoy_entries' : 'entries';
+
+    if (USE_FIREBASE) {
+      await setDoc(doc(db, `users/${cleanEmail}/${colName}`, updatedEntry.id), updatedEntry);
+    } else {
+      const storageKey = isFakeMode ? `diary_decoy_entries_${cleanEmail}` : `diary_entries_${cleanEmail}`;
+      let entries = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      entries = entries.map(e => e.id === updatedEntry.id ? updatedEntry : e);
+      localStorage.setItem(storageKey, JSON.stringify(entries));
+    }
     return updatedEntry;
   },
 
   deleteEntry: async (email, entryId, isFakeMode = false) => {
     await delay(400);
-    const storageKey = isFakeMode 
-      ? `diary_decoy_entries_${email.toLowerCase().trim()}`
-      : `diary_entries_${email.toLowerCase().trim()}`;
-    let entries = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    
-    entries = entries.filter(e => e.id !== entryId);
-    localStorage.setItem(storageKey, JSON.stringify(entries));
+    const cleanEmail = email.toLowerCase().trim();
+    const colName = isFakeMode ? 'decoy_entries' : 'entries';
+
+    if (USE_FIREBASE) {
+      await deleteDoc(doc(db, `users/${cleanEmail}/${colName}`, entryId));
+    } else {
+      const storageKey = isFakeMode ? `diary_decoy_entries_${cleanEmail}` : `diary_entries_${cleanEmail}`;
+      let entries = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      entries = entries.filter(e => e.id !== entryId);
+      localStorage.setItem(storageKey, JSON.stringify(entries));
+    }
     return entryId;
   }
 };
