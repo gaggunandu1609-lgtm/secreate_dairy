@@ -82,11 +82,19 @@ export const authService = {
     await delay(800);
     const cleanEmail = email.toLowerCase().trim();
     let user;
+    let needsMigration = false;
 
     if (USE_FIREBASE) {
       const userDoc = await getDoc(doc(db, "users", cleanEmail));
       if (userDoc.exists()) {
         user = userDoc.data();
+      } else {
+        // Not in Firebase? Check LocalStorage for auto-migration
+        const localUsers = JSON.parse(localStorage.getItem('diary_users') || '{}');
+        if (localUsers[cleanEmail]) {
+          user = localUsers[cleanEmail];
+          needsMigration = true;
+        }
       }
     } else {
       const users = JSON.parse(localStorage.getItem('diary_users') || '{}');
@@ -97,18 +105,41 @@ export const authService = {
       throw new Error('Key not found... Is the spelling correct? 🗝️');
     }
 
-    if (password === user.password) {
-      return {
-        email: user.email,
-        displayName: user.displayName,
-        isFakeMode: false
-      };
-    } else if (password === user.fakePassword) {
-      return {
-        email: user.email,
-        displayName: user.displayName + " (Decoy)",
-        isFakeMode: true
-      };
+    if (password === user.password || password === user.fakePassword) {
+      
+      // AUTO-MIGRATE to Firebase if they logged in successfully with an old LocalStorage account
+      if (needsMigration && USE_FIREBASE) {
+        // 1. Upload User
+        await setDoc(doc(db, "users", cleanEmail), user);
+        
+        // 2. Upload Normal Entries
+        const localEntries = JSON.parse(localStorage.getItem(`diary_entries_${cleanEmail}`) || '[]');
+        for (const entry of localEntries) {
+          await setDoc(doc(db, `users/${cleanEmail}/entries`, entry.id), entry);
+        }
+        
+        // 3. Upload Decoy Entries
+        const localDecoy = JSON.parse(localStorage.getItem(`diary_decoy_entries_${cleanEmail}`) || '[]');
+        for (const entry of localDecoy) {
+          await setDoc(doc(db, `users/${cleanEmail}/decoy_entries`, entry.id), entry);
+        }
+        
+        console.log("Magically migrated local account to Firebase Cloud! ☁️✨");
+      }
+
+      if (password === user.password) {
+        return {
+          email: user.email,
+          displayName: user.displayName,
+          isFakeMode: false
+        };
+      } else {
+        return {
+          email: user.email,
+          displayName: user.displayName + " (Decoy)",
+          isFakeMode: true
+        };
+      }
     } else {
       throw new Error('The magic password didn\'t match the lock! 🔐');
     }
